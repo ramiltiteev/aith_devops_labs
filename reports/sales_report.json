@@ -1,0 +1,35 @@
+{
+  "generated_at": "2026-05-07T11:27:49Z",
+  "daily_metrics": {
+    "total_orders": 6,
+    "total_items": 23,
+    "total_revenue": 674.22,
+    "average_order_value": 112.37
+  },
+  "regional_metrics": [
+    {
+      "region": "East",
+      "orders": 1,
+      "items": 3,
+      "revenue": 299.97
+    },
+    {
+      "region": "North",
+      "orders": 2,
+      "items": 5,
+      "revenue": 110.0
+    },
+    {
+      "region": "South",
+      "orders": 2,
+      "items": 7,
+      "revenue": 176.25
+    },
+    {
+      "region": "West",
+      "orders": 1,
+      "items": 8,
+      "revenue": 88.0
+    }
+  ]
+}
