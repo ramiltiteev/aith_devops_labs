@@ -1,29 +1,31 @@
-# Лабораторная работа 1
+# Лабораторная работа 2
 
-Репозиторий содержит решение лабораторной № 1 по развёртыванию Apache Airflow через `docker compose` с использованием кастомного Docker-образа и собственного DAG.
+Репозиторий содержит решение лабораторной № 2 по интеграции Apache Airflow с Apache Spark. За основу взята лабораторная № 1: Airflow и Postgres остались оркестраторами, а вычисления перенесены в отдельный PySpark job, который запускается через `SparkSubmitOperator`.
 
 ## Содержимое
 
-- `Dockerfile` собирает образ на базе `apache/airflow:2.7.1` и копирует DAG в рабочую директорию Airflow.
-- `docker-compose.yml` поднимает `postgres`, `airflow-init`, `airflow-webserver` и `airflow-scheduler`.
-- `dags/sales_analytics_dag.py` описывает DAG `sales_analytics_pipeline`.
+- `Dockerfile` собирает образ Airflow, устанавливает Java, Spark provider и `pyspark`, а также копирует DAG и Spark-скрипты.
+- `docker-compose.yml` поднимает `postgres`, `airflow-init`, `airflow-webserver`, `airflow-scheduler`, `spark-master` и `spark-worker`.
+- `dags/sales_analytics_dag.py` описывает DAG `sales_analytics_spark_pipeline`, который отправляет Spark job в кластер.
+- `spark/sales_analytics_spark_job.py` содержит PySpark-логику расчёта метрик.
+- `reports/` хранит итоговый JSON-отчёт.
 
 ## Что делает DAG
 
-DAG имитирует небольшой ETL/аналитический процесс по продажам:
+DAG `sales_analytics_spark_pipeline` запускает PySpark-приложение, которое:
 
-1. генерирует набор заказов;
-2. обогащает записи вычислением выручки;
-3. считает дневные метрики;
-4. считает метрики по регионам;
-5. сохраняет итоговый JSON-отчёт в `reports/sales_report.json` на локальной машине.
+1. формирует тестовый набор заказов;
+2. вычисляет выручку по каждой записи;
+3. считает общие метрики по продажам;
+4. считает агрегаты по регионам;
+5. сохраняет итоговый JSON-отчёт в `reports/sales_report.json`.
 
 ## Как запустить локально
 
 Требования:
 
 - установлен Docker;
-- установлен Docker Compose V2 (`docker compose`).
+- установлен Docker Compose V2 (`docker compose`);
 - в файле `.env` должен быть указан `AIRFLOW_UID` текущего пользователя.
 
 Команды запуска:
@@ -34,9 +36,12 @@ docker compose up airflow-init
 docker compose up -d
 ```
 
-После запуска Airflow будет доступен по адресу `http://localhost:8080`.
+После запуска сервисы будут доступны по адресам:
 
-После успешного запуска DAG отчёт появится в папке `reports/` в корне проекта.
+- Airflow UI: `http://localhost:8080`
+- Spark Master UI: `http://localhost:8081`
+- Spark Worker UI: `http://localhost:8082`
+- Spark application UI во время выполнения job: `http://localhost:4040`
 
 Учётные данные для входа:
 
@@ -49,7 +54,15 @@ docker compose up -d
 docker ps
 ```
 
-В списке должны быть контейнеры `postgres`, `airflow-webserver` и `airflow-scheduler` в состоянии `healthy` или `Up`.
+В списке должны быть контейнеры `postgres`, `airflow-webserver`, `airflow-scheduler`, `spark-master` и `spark-worker` в состоянии `healthy` или `Up`.
+
+Дополнительно можно проверить выполнение job в логах scheduler:
+
+```bash
+docker compose logs airflow-scheduler
+```
+
+Если job стартовала корректно, в логах будет вызов `spark-submit`, а в Spark UI появится зарегистрированное приложение.
 
 Остановка:
 
