@@ -1,9 +1,11 @@
 # CHANGES
 
-## Лабораторная работа 2
+## Лабораторная работа 3
 
-- `Dockerfile` обновлён: добавлены `procps`, `default-jre`, `apache-airflow-providers-apache-spark` и `pyspark`, а также копирование директории `spark/`.
-- `docker-compose.yml` расширен сервисами `spark-master` и `spark-worker`, пробросом Spark UI и volume для `spark/`.
-- DAG из лабораторной № 1 заменён на оркестрацию Spark job через `SparkSubmitOperator`.
-- Добавлен PySpark-скрипт `spark/sales_analytics_spark_job.py` для расчёта отчёта по продажам.
-- `README.md` обновлён под новый процесс запуска и проверки Airflow + Spark.
+- Добавлен workflow GitHub Actions `.github/workflows/lab3-ci-cd.yml` как адаптация задания по CI/CD под GitHub-репозиторий.
+- В workflow реализованы этапы `test`, `build` и `deploy` с зависимостями `needs`.
+- `test` настроен на запуск во всех ветках и проверяет наличие директорий `dags/`, `spark/` и базовых файлов проекта.
+- `build` автоматически пропускается для веток `feature/*`.
+- `deploy` выполняется только для веток `main`, `master`, `develop` и `lab3`.
+- Все jobs привязаны к self-hosted runner с label `lab3`, что заменяет тегированный runner из GitLab-версии задания.
+- `README.md` дополнен инструкцией по настройке self-hosted runner и описанием логики GitHub Actions pipeline.

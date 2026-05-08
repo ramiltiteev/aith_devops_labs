@@ -1,0 +1,70 @@
+name: Lab 3 CI/CD
+
+on:
+  push:
+    branches:
+      - "**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    runs-on:
+      - self-hosted
+      - linux
+      - lab3
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify required project directories
+        run: |
+          test -d dags
+          test -d spark
+          test -f Dockerfile
+          test -f docker-compose.yml
+
+  build:
+    name: Build
+    needs: test
+    if: ${{ !startsWith(github.ref_name, 'feature/') }}
+    runs-on:
+      - self-hosted
+      - linux
+      - lab3
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Airflow image
+        run: docker build -t aith-devops-labs-airflow:2.7.1 .
+
+      - name: Verify built image
+        run: docker image inspect aith-devops-labs-airflow:2.7.1 >/dev/null
+
+  deploy:
+    name: Deploy
+    needs: build
+    if: ${{ github.ref_name == 'main' || github.ref_name == 'master' || github.ref_name == 'develop' || github.ref_name == 'lab3' }}
+    runs-on:
+      - self-hosted
+      - linux
+      - lab3
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Start infrastructure
+        run: docker compose up -d postgres spark-master spark-worker
+
+      - name: Initialize Airflow
+        run: docker compose run --rm airflow-init
+
+      - name: Deploy application services
+        run: docker compose up -d airflow-webserver airflow-scheduler
+
+      - name: Show running services
+        run: docker compose ps
