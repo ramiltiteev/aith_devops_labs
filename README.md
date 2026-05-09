@@ -1,25 +1,37 @@
-# Лабораторная работа 3
+# Лабораторная работа 4
 
-Репозиторий содержит решение лабораторной № 3 по CI/CD. За основу взята лабораторная № 1: Airflow и Postgres остались оркестраторами, а вычисления перенесены в отдельный PySpark job, который запускается через `SparkSubmitOperator`. Для лабораторной № 3 пайплайн реализован в формате GitHub Actions.
+Репозиторий содержит решение лабораторной № 4 по наблюдаемости для пайплайна Airflow + Spark. За основу взята предыдущая версия проекта: Airflow запускает PySpark job через `SparkSubmitOperator`, а для лабораторной № 4 добавлены Loki, Alloy, Prometheus и Grafana.
 
 ## Содержимое
 
-- `Dockerfile` собирает образ Airflow, устанавливает Java, Spark provider и `pyspark`, а также копирует DAG и Spark-скрипты.
-- `docker-compose.yml` поднимает `postgres`, `airflow-init`, `airflow-webserver`, `airflow-scheduler`, `spark-master` и `spark-worker`.
-- `dags/sales_analytics_dag.py` описывает DAG `sales_analytics_spark_pipeline`, который отправляет Spark job в кластер.
-- `spark/sales_analytics_spark_job.py` содержит PySpark-логику расчёта метрик.
-- `reports/` хранит итоговый JSON-отчёт.
-- `.github/workflows/lab3-ci-cd.yml` описывает CI/CD-пайплайн для GitHub Actions.
+- `Dockerfile` собирает образ Airflow с Java, Spark provider и `pyspark`.
+- `docker-compose.yml` поднимает Postgres, Airflow, Spark master/worker, Loki, Alloy, Prometheus и Grafana.
+- `dags/sales_analytics_dag.py` описывает DAG `sales_analytics_spark_pipeline`.
+- `spark/sales_analytics_spark_job.py` содержит PySpark-логику расчёта отчёта.
+- `spark/metrics.properties` включает Prometheus servlet для Spark master и worker.
+- `alloy.conf` описывает сбор файловых логов Airflow и Spark в Loki.
+- `prometheus.yml` описывает сбор метрик Spark master и worker.
+- `grafana/provisioning/` автоматически создаёт datasource Loki и Prometheus.
+- `grafana/dashboards/lab4-observability.json` создаёт дашборд с панелями по Spark-метрикам и логам.
 
-## Что делает DAG
+## Что реализовано для ЛР 4
 
-DAG `sales_analytics_spark_pipeline` запускает PySpark-приложение, которое:
-
-1. формирует тестовый набор заказов;
-2. вычисляет выручку по каждой записи;
-3. считает общие метрики по продажам;
-4. считает агрегаты по регионам;
-5. сохраняет итоговый JSON-отчёт в `reports/sales_report.json`.
+1. Логи Airflow монтируются наружу в `logs/airflow`.
+2. Логи Spark master/worker пишутся в `logs/spark/spark-master.log` и `logs/spark/spark-worker.log`.
+3. Alloy читает эти файлы и отправляет записи в Loki.
+4. Spark master и worker отдают Prometheus-метрики:
+   - `http://localhost:8081/metrics/master/prometheus`
+   - `http://localhost:8082/metrics/worker/prometheus`
+5. Prometheus собирает Spark-метрики каждые 10 секунд.
+6. Grafana автоматически получает datasource `Loki` и `Prometheus`.
+7. В Grafana создаётся дашборд `Lab 4 Spark Observability` с панелями:
+   - состояние Spark targets по запросу `up{job=~"spark-master|spark-worker"}`;
+   - сводка Spark master: alive workers, apps, waiting apps;
+   - текущая capacity worker: executors, used/free cores;
+   - графики CPU cores и memory worker;
+   - количество строк логов в минуту из Loki;
+   - количество ошибок в логах за последние 5 минут;
+   - свежие Spark master/worker logs и Airflow task logs.
 
 ## Как запустить локально
 
@@ -43,55 +55,32 @@ docker compose up -d
 - Spark Master UI: `http://localhost:8081`
 - Spark Worker UI: `http://localhost:8082`
 - Spark application UI во время выполнения job: `http://localhost:4040`
+- Loki: `http://localhost:3100`
+- Prometheus: `http://localhost:9090`
+- Grafana: `http://localhost:3000`
+- Alloy UI: `http://localhost:12345`
 
-Учётные данные для входа:
+Учётные данные Airflow:
 
 - логин: `admin`
 - пароль: `admin`
 
-Проверка контейнеров:
+Grafana настроена с anonymous-доступом и ролью `Admin`, поэтому отдельный вход не нужен.
+
+## Проверка
+
+Запустить DAG `sales_analytics_spark_pipeline` в Airflow. После выполнения:
 
 ```bash
-docker ps
+docker compose ps
+docker compose logs alloy
 ```
 
-В списке должны быть контейнеры `postgres`, `airflow-webserver`, `airflow-scheduler`, `spark-master` и `spark-worker` в состоянии `healthy` или `Up`.
+В Grafana открыть `Dashboards -> DevOps Labs -> Lab 4 Spark Observability`. 
+Скриншоты находятся в папке screenshots
 
-Дополнительно можно проверить выполнение job в логах scheduler:
-
-```bash
-docker compose logs airflow-scheduler
-```
-
-Если job стартовала корректно, в логах будет вызов `spark-submit`, а в Spark UI появится зарегистрированное приложение.
-
-Остановка:
+## Остановка
 
 ```bash
 docker compose down
 ```
-
-## Настройка CI/CD
-
-Для GitHub-версии лабораторной пайплайн вынесен в `.github/workflows/lab3-ci-cd.yml`. В GitHub Actions нет `stages` в GitLab-стиле, поэтому последовательность `test -> build -> deploy` реализована через зависимости `needs`.
-
-Что делает workflow:
-
-- `test` запускается при каждом `push` в любую ветку и проверяет, что директории `dags/` и `spark/`, а также файлы `Dockerfile` и `docker-compose.yml` существуют.
-- `build` запускается только после успешного `test`, но автоматически пропускается для веток `feature/*`.
-- `deploy` запускается только для веток `main`, `master`, `develop` и `lab3`.
-- все jobs выполняются только на self-hosted runner с label `lab3`, что является аналогом тега раннера из задания для GitLab.
-
-### Что нужно настроить в GitHub
-
-1. В репозитории открыть `Settings -> Actions -> Runners`.
-2. Зарегистрировать `self-hosted` runner на той машине, где доступен Docker и `docker compose`.
-3. Добавить runner пользовательский label `lab3`.
-4. Убедиться, что runner запущен и привязан к репозиторию.
-
-### Как проверять выполнение
-
-- workflow будет виден на вкладке `Actions` в GitHub;
-- после пуша в `main`, `master`, `develop` или `lab3` должны успешно пройти `test`, `build` и `deploy`;
-- после пуша в ветку `feature/*` должен выполниться только `test`;
-- состояние контейнеров на self-hosted runner можно проверить командой `docker compose ps`.

@@ -1,2 +1,6 @@
 __pycache__/
 .env
+logs/airflow/*
+logs/spark/*
+!logs/airflow/.gitkeep
+!logs/spark/.gitkeep

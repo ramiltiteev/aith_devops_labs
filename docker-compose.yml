@@ -15,6 +15,7 @@ x-airflow-common:
     - ./dags:/opt/airflow/dags
     - ./spark:/opt/airflow/spark
     - ./reports:/opt/airflow/reports
+    - ./logs/airflow:/opt/airflow/logs
   depends_on:
     postgres:
       condition: service_healthy
@@ -88,7 +89,13 @@ services:
     image: spark:3.5.0-python3
     container_name: spark-master
     hostname: spark-master
-    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+    user: root
+    command:
+      - bash
+      - -c
+      - |
+        mkdir -p /opt/spark/logs
+        /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master 2>&1 | tee -a /opt/spark/logs/spark-master.log
     environment:
       SPARK_MASTER_HOST: spark-master
       SPARK_MASTER_PORT: 7077
@@ -98,13 +105,21 @@ services:
       - "8081:8080"
     volumes:
       - ./spark:/opt/spark/jobs
+      - ./spark/metrics.properties:/opt/spark/conf/metrics.properties:ro
+      - ./logs/spark:/opt/spark/logs
     restart: unless-stopped
 
   spark-worker:
     image: spark:3.5.0-python3
     container_name: spark-worker
     hostname: spark-worker
-    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    user: root
+    command:
+      - bash
+      - -c
+      - |
+        mkdir -p /opt/spark/logs
+        /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077 2>&1 | tee -a /opt/spark/logs/spark-worker.log
     environment:
       SPARK_WORKER_WEBUI_PORT: 8081
       SPARK_WORKER_CORES: 2
@@ -115,4 +130,62 @@ services:
       - "8082:8081"
     volumes:
       - ./spark:/opt/spark/jobs
+      - ./spark/metrics.properties:/opt/spark/conf/metrics.properties:ro
+      - ./logs/spark:/opt/spark/logs
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.2.0
+    container_name: loki
+    command: -config.file=/etc/loki/local-config.yaml
+    ports:
+      - "3100:3100"
+    restart: unless-stopped
+
+  alloy:
+    image: grafana/alloy:v1.5.1
+    container_name: alloy
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - /etc/alloy/config.alloy
+    ports:
+      - "12345:12345"
+    volumes:
+      - ./logs:/opt/logs:ro
+      - ./alloy.conf:/etc/alloy/config.alloy:ro
+    depends_on:
+      - loki
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.48.1
+    container_name: prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - spark-master
+      - spark-worker
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/lab4-observability.json
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - loki
+      - prometheus
     restart: unless-stopped
